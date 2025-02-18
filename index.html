@@ -1,0 +1,933 @@
+<!--- 
+NICK CANNON - HTML
+Created by Chance Hoard
+2025.02.04 - 2025.02.18
+
+A cheeseburger cannon that launces a projectile.
+Custom physics engine
+Custom animations
+Replayability
+Upgradable Projectile and Cannon
+Everything is Cheeseburgers
+-->
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <!--title: text to appear in the page tab-->
+    <title>Nickholas the Cannon - Chance Hoard</title>
+
+    <!-- metadata: machine readable, will not appear on the page - specify page description, keywords, author of the document, last modified, and other metadata -->
+    <meta charset="UTF-8" />
+    <meta name="description" content="InterActiMation: A-Frame Scene Starter" />
+    <meta name="keywords" content="InterActiMation,A-Frame,aframe,webvr" />
+
+    <!--script: include the a-frame javascript-->
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  </head>
+
+  <body>
+    <!--a-scene: references content in the script src to create the aframe scene, which includes a default camera and light-->
+    <script>
+      ///////////////////////////////////////
+      // GLOBAL VARIABLES
+      ///////////////////////////////////////
+      var score = 0;
+      var highscore = 0;
+      var bank = 0;
+      var launched = false;
+      var landed = false;
+      var scene;
+      var cannon;
+      //var cameraBevel;
+      var camera;
+      var scoreTextEl;
+      var highscoreTextEl;
+      var tickClock = 0;
+      //var mouseX = 0;
+      //var mouseCenter = 0;
+
+      ////////////////////////////////////////
+      // CLASSSESS
+      ////////////////////////////////////////
+
+      // Projectile
+      class Projectile {
+        constructor() {
+          // Attributes attribute to projectile's final speed vector.
+          this.mass = 1; // Each attribute has a current value
+          this.aero = 0.1;
+          this.bounce = 0;
+          this.bounceNum = 0; // (bounce not currently supported)
+          this.bounceness = 0.5;
+          this.massCost = 60; // And a cost.
+          this.aeroCost = 120;
+          this.bounceCost = 220;
+          this.bouncenessCost = 60;
+
+          this.velocity = [0, 0];
+
+          // In order to access local object variables, "this" must be bound to all methods.
+          // Yeah its fucking stupid.
+          this.upgradeMass = this.upgradeMass.bind(this);
+          this.upgradeAero = this.upgradeAero.bind(this);
+          this.upgradeBounce = this.upgradeBounce.bind(this);
+          this.upgradeBounceness = this.upgradeBounceness.bind(this);
+        }
+
+        upgradeMass() {
+          console.log(
+            bank + " - " + this.massCost + " = " + (bank - this.massCost)
+          );
+          if (bank >= this.massCost) {
+            this.mass += 0.1;
+            bank -= this.massCost;
+            this.massCost *= 1.2;
+          } else {
+            return false;
+          }
+          return true;
+        }
+        upgradeAero() {
+          if (bank >= this.aeroCost) {
+            this.aero += 0.05;
+            bank -= this.aeroCost;
+            this.aeroCost *= 1.35;
+          } else {
+            return false;
+          }
+          return true;
+        }
+        upgradeBounce() {
+          if (bank >= this.bounceCost) {
+            this.bounce += 1;
+            bank -= this.bounceCost;
+            this.bounceCost *= 2.15;
+          } else {
+            return false;
+          }
+          return true;
+        }
+        upgradeBounceness() {
+          if (bank >= this.bouncenessCost) {
+            this.bounceness += 0.1;
+            bank -= this.bouncenessCost;
+            this.bouncenessCost *= 1.1;
+          } else {
+            return false;
+          }
+          return true;
+        }
+      }
+
+      // Cannon
+      class Cannon {
+        constructor() {
+          // The cannon also have attributes that determine the projectile's final speed vector.
+          this.capacity = 1;
+          this.efficiency = 0.5;
+          this.american = 0.2;
+          this.capacityCost = 150;
+          this.efficiencyCost = 80;
+          this.americanCost = 1000;
+
+          this.upgradeCapacity = this.upgradeCapacity.bind(this);
+          this.upgradeEfficiency = this.upgradeEfficiency.bind(this);
+          this.upgradeAmerican = this.upgradeAmerican.bind(this);
+        }
+
+        upgradeCapacity() {
+          if (bank >= this.capacityCost) {
+            this.capacity += 0.2;
+            bank -= this.capacityCost;
+            this.capacityCost *= 1.8;
+          } else {
+            return false;
+          }
+          return true;
+        }
+        upgradeEfficiency() {
+          if (bank >= this.efficiencyCost) {
+            this.efficiency += 0.1;
+            bank -= this.efficiencyCost;
+            this.efficiencyCost *= 1.6;
+          } else {
+            return false;
+          }
+          return true;
+        }
+        upgradeAmerican() {
+          if (bank >= this.americanCost) {
+            this.american += 0.1;
+            bank -= this.americanCost;
+            this.americanCost *= 3.5;
+          } else {
+            return false;
+          }
+          return true;
+        }
+      }
+
+      // OBJECT CREATION
+      var projectileObj = new Projectile(); // Reference to a projectile so we can store/change all its stats.
+      var cannonObj = new Cannon(); // Same with the cannon
+
+      //////////////////////////////////////
+      // INPUT MAPPING AND HANDLING
+      //////////////////////////////////////
+      function keyPressed(e) {
+        let xRot = cannon.getAttribute("rotation").x;
+        if (e.keyCode == 87 && xRot < 90) {
+          // "e" is a reference to the JS event, in this case we want keypresses.
+          // xRot < 90 is to clamp the rotation so we're not shooting negative cheeseburgers.
+          cannon.setAttribute("rotation", { x: (xRot += 2), y: 0, z: 0 }); // Setting the cannon rotation.
+        } else if (e.keyCode == 83 && xRot > -10) {
+          cannon.setAttribute("rotation", { x: (xRot -= 2), y: 0, z: 0 }); // Setting the cannon rotation.
+        } else if (e.keyCode == 32 && !launched) {
+          // Spawn in projectile
+          // A projectile is not found in the document on startup, it is created here after launch with all the proper attributes.
+          let projectile = document.createElement("a-entity");
+          projectile.setAttribute("id", "projectile"); // Must be named "projectile" so the script can have a reference to it with querySelector("#projectile")
+          projectile.setAttribute("geometry", { primitive: "sphere" });
+          projectile.setAttribute("position", { x: 0, y: 1, z: -3 });
+          projectile.setAttribute("scale", { x: 0.5, y: 0.5, z: 0.5 });
+
+          document.querySelector("a-scene").appendChild(projectile); // Appends the projectile entity to the scene.
+          // Without this the projectile will not be inside the A-FRAME scene.
+
+          launched = true;
+        }
+      }
+
+      // CAMMOVE
+      // Moves and rotates the camera based on how far the projectile goes so that both are visible.
+      function cammove(vel) {
+        let camChangeX = vel[0];
+        let camChangeY = vel[1];
+
+        // SOHCAHTOA
+        // Tan = Opp/Adj
+        // Tan(camAngle) = camChangeX/camZ(3)
+        // camAngle = atan(camChangeX/3)
+        let camRotChangeY =
+          Math.atan(camera.getAttribute("position").x / 3) * (180 / Math.PI);
+
+        camera.setAttribute("position", {
+          x: camera.getAttribute("position").x + camChangeX * 1.2,
+          y: camera.getAttribute("position").y,
+          z: camera.getAttribute("position").z,
+        });
+        camera.setAttribute("rotation", { x: 0, y: camRotChangeY, z: 0 });
+        //console.log(camera.getAttribute("rotation").y);
+      }
+
+      //////////////////////////////
+      // COMPONENT 1: CANNONAIM
+      //////////////////////////////
+      AFRAME.registerComponent("cannonaim", {
+        // The "init" method is called upon initialization of the HTML element.
+        init: function () {
+          // Grabbing references for our global variables.
+          // Best do to that here and not upon decleration because the elements may not be initialized yet.
+          // Hence why we're calling them inside cannonaim's init.
+          scene = document.querySelector("a-scene");
+          cannon = scene.querySelector("#cannon");
+          camera = scene.querySelector("#mainCam");
+          scoreTextEl = scene.querySelector("#scoreText"); // Distance: X Cheeseburgers (always visible)
+          highscoreTextEl = scene.querySelector("#highscoreText"); // Greatest Distance: X Cheeseburgers (UI_Main)
+          document.addEventListener("keydown", keyPressed); // Event handler for keyboard input that directs JS to our custom input handling.
+        },
+
+        // The "tick" method is called once per frame (think of it like unity's Update())
+        tick: function (time, timeDelta) {
+          // timeDelta is the time between this frame and the last frame, use it to account for varying frame rates across devices.
+          if (tickClock % 2 == 0) {
+            // To slow down the loop (executes every 2 frames due to tickClock++ every frame)
+            if (launched && !landed) {
+              let projectileEl = scene.querySelector("#projectile"); // Reference to projectile element created in keyPressed.
+
+              let distZ = projectileEl.getAttribute("position").z; // Distance Z: The actual distance
+              let distY = projectileEl.getAttribute("position").y; // Distance Y: The height (if <= 0 we know projectile is on ground).
+              // SPEED - where all the upgradable attributes come into play.
+              let speed =
+                projectileObj.mass *
+                projectileObj.aero *
+                cannonObj.capacity *
+                cannonObj.efficiency *
+                cannonObj.american *
+                100; // *100 is arbutrary other ideas I played around with were *10 + 1
+
+              let cannonAngle = cannon.getAttribute("rotation").x; // Getting cannon angle to find out the X and Y components of the speed vector.
+
+              // The speed is just a number, and we need to change our projectiles X and Y coordinates.
+              // So we need to picture this like a right triangle. cannonAngle is theta, and speed is our hypotenuse
+              // (since speed is the totalality of X and Y vectors put together)
+              // So we need to solve for the legs (Adjacent and Opposite)
+
+              // adjacent = hypetenuse * cos(cannonAngle)
+              let speedZ = speed * Math.cos(cannonAngle * (Math.PI / 180)); // Math.(litertally any trig function) returns a value in radians, while we're looking for degrees. Math.PI/180 fixes this.
+              // opposite = hypotenuse * sin(cannonAngle)
+              let speedY = speed * Math.sin(cannonAngle * (Math.PI / 180));
+
+              // Ignore the formatting of this if statement idk why Glitch thinks this is "prettier"
+              if (
+                projectileObj.velocity[0] + projectileObj.velocity[1] == 0 && // If object is not moving and has not landed (meaning just launched)
+                !landed
+              ) {
+                // We only want to set these once.
+                projectileObj.velocity[0] = speedZ;
+                projectileObj.velocity[1] = speedY;
+              }
+              if (projectileObj.velocity[0] > 0) {
+                // Gradually decrease distance velocity to account for drag
+                projectileObj.velocity[0] -= 0.02;
+              } else {
+                // If it's not greater than 0, it should be 0.
+                projectileObj.velocity[0] = 0;
+              }
+
+              if (projectileEl.getAttribute("position").y > 0) {
+                // Basically gravity (so you could technically say gravity is .04c/s (Cheeseburgers/Second))
+                projectileObj.velocity[1] -= 0.04;
+              } else {
+                // If position y !> 0 bro should not move.
+                projectileObj.velocity[1] = 0;
+                projectileObj.velocity[0] = 0;
+              }
+
+              if (projectileEl.getAttribute("position").y <= 0 && !landed) {
+                if (projectileObj.bounceNum == 0) { // Attempting bounce
+                  //console.log("whoops");
+                  landed = true;
+                  bank += score;
+                } /* else {
+                  
+                  bounceNum--;
+                  speedY += projectileObj.bounceness;
+                } */
+              }
+
+              //console.log(projectileObj.velocity);
+
+              // Setting position of projectile
+              // Increasing by projectile.Obj.velocity(X)
+              projectileEl.setAttribute("position", {
+                x: projectileEl.getAttribute("position").x,
+                y: distY + projectileObj.velocity[1],
+                z: distZ - projectileObj.velocity[0],
+              });
+              if (projectileEl.getAttribute("position").y >= 0) {
+                // Mathematical calculation for a BigMac cheeseburger (not really that shit was some crazy numbers and I value my UI)
+                score = distZ * 0.5 * -1; // Set score only when not on ground.
+              }
+              
+              // Update score UI (.toFixed(1) rounds to the first decimal place since the number freaky.)
+              // NOTE: .TOFIXED CONVERTS YOUR VARIABLE INTO A STRING SO NEVER MODIFY THE VARIABLE DIRECTLY ONLY WHEN FORMATTING THE OUTPUT
+              // I spent way too long trying to figure that out :(
+              scoreTextEl.setAttribute(
+                "text",
+                "value",
+                "Distance: " + score.toFixed(1) + " Cheeseburgers"
+              );
+
+              // Set Highscore
+              if (score > highscore && landed) {
+                highscore = score;
+                highscoreTextEl.setAttribute(
+                  "text",
+                  "value",
+                  "Greatest Distance: " +
+                    highscore.toFixed(1) +
+                    " Cheeseburgers"
+                );
+              }
+
+              // Call cammove to rotate the camera based on the projectile's velocity.
+              cammove(projectileObj.velocity);
+
+              //console.log(projectileEl.getAttribute("position"));
+              //console.log("Speed: " + speed + " Cannon Angle: " + cannonAngle + " sin(cannonAngle): " + Math.sin(cannonAngle * (Math.PI / 180)) + " SpeedY: " + speedY + " SpeedZ: " + speedZ);
+            }
+          } else if (tickClock >= 100000) { // I don't want my counter getting to big and overflowing
+            // So I said if it gets to big go back to 0
+            tickClock = 0;
+          }
+          tickClock++;
+        },
+      });
+
+      
+      ///////////////////////////////////
+      // UI REFERENCE VARIABLES
+      ///////////////////////////////////
+      
+      var UI_MainEl; // Main UI Element with Relaunch and Shop buttons after landed.
+      var UI_ShopEl; // Shop UI
+      var UI_BTN_Relaunch; // Element for relaunch button
+      var UI_BTN_Shop; // Element for shop button
+
+      // Shop Buttons
+      var BTN_mass;
+      var BTN_aero;
+      var BTN_bounces;
+      var BTN_bounceness;
+      var BTN_power;
+      var BTN_efficiency;
+      var BTN_american;
+      
+      var BTN_return;
+
+      // Resets the nessisary variables and allows for continuous play.
+      function relaunch(event) {
+        launched = false;
+        landed = false;
+        document.querySelector("#projectile").remove(); // Despawns the projectile. It's ok we can make a new one.
+        // The reason we can remove the projectile element is because we have a separate projectile class for handling attributes.
+        score = 0; // Resets score (score is current score and bank is total score)
+        scoreTextEl.setAttribute("text", "value", "Distance: 0 Cheeseburgers");
+        cannon.setAttribute("rotation", { x: 0 });
+        camera.setAttribute("position", { x: 0, y: 0, z: 3 });
+        camera.setAttribute("rotation", { x: 0, y: 0, z: 0 });
+        UI_MainEl.setAttribute("position", { x: 0, y: -2, z: -1 });
+        UI_ShopEl.setAttribute("position", { x: 0, y: -2, z: -1 });
+
+        projectileObj.velocity = [0, 0];
+      }
+
+      // When enter shop button is clicked
+      function shopClicked(event) {
+        UI_MainEl.emit("playEnterShop"); // <- UI_Main out
+        UI_ShopEl.emit("playUIShop"); // ^ UI_Shop in
+      }
+
+      /////////////////////////////////////
+      // COMPONENT 2: USERINTERFACE
+      /////////////////////////////////////
+      // This component handles all the UI magic because you put AFRAME JS code in components so this is mine.
+      AFRAME.registerComponent("userinterface", {
+        init: function () {
+          UI_MainEl = document.querySelector("#UI_Main"); // Reference to Main UI Element
+          UI_ShopEl = document.querySelector("#UI_Shop"); // Reference to Shop UI Element
+          /*
+          UI_MainEl.addEventListener("mainUIAni", function(){
+            //console.log(UI_MainEl.getAttribute("position").y);
+            
+            var animationComponent = UI_MainEl.components.animation;
+            if (animationComponent) {
+              console.log(UI_MainEl.getAttribute("position").y);
+              animationComponent.pause();
+              animationComponent.play();
+              UI_MainEl.setAttribute("animation", {
+              property: "position",
+              to: "0 0 -1",
+              dur: 1500,
+              delay: 500,
+              easing: "easeOutSine"
+            });
+            }
+            
+            const ani = anime({
+              targets: UI_MainEl,
+              translateY: -2,
+              duration: 1500
+            });
+            console.log(ani);
+          });
+          */
+          
+          // Relaunch button (UI_Main -> relaunch())
+          UI_BTN_Relaunch = UI_MainEl.querySelector("#BTN_Relaunch");
+          UI_BTN_Relaunch.addEventListener("mouseenter", function (event) {
+            UI_BTN_Relaunch.setAttribute("material", "color", "#3CB371");
+          });
+          UI_BTN_Relaunch.addEventListener("mouseleave", function (event) {
+            UI_BTN_Relaunch.setAttribute("material", "color", "#32CD32");
+          });
+          UI_BTN_Relaunch.addEventListener("click", relaunch);
+
+          // Shop Button (UI_Main -> shopClicked())
+          UI_BTN_Shop = UI_MainEl.querySelector("#BTN_Shop"); // Grab Shop Btn element and assign it
+          UI_BTN_Shop.addEventListener("mouseenter", function (event) {
+            UI_BTN_Shop.setAttribute("material", "color", "#530D05"); // Change color on hover
+          });
+          UI_BTN_Shop.addEventListener("mouseleave", function (event) {
+            UI_BTN_Shop.setAttribute("material", "color", "#CF3655"); // Revert color on leave
+          });
+          UI_BTN_Shop.addEventListener("click", shopClicked);
+
+          // Return Button (UI_Shop -> relaunch())
+          BTN_return = UI_ShopEl.querySelector("#BTN_return");
+          BTN_return.addEventListener("mouseenter", function (event) {
+            BTN_return.setAttribute("material", "color", "#191970");
+          });
+          BTN_return.addEventListener("mouseleave", function (event) {
+            BTN_return.setAttribute("material", "color", "#000080");
+          });
+          BTN_return.addEventListener("click", relaunch);
+
+          // Upgrade Buttons
+          // Mass
+          BTN_mass = UI_ShopEl.querySelector("#BTN_mass");
+          BTN_mass.addEventListener("mouseenter", function (event) {
+            BTN_mass.setAttribute("material", "color", "#ADFF2F");
+          });
+          BTN_mass.addEventListener("mouseleave", function (event) {
+            BTN_mass.setAttribute("material", "color", "green");
+          });
+          BTN_mass.addEventListener("click", projectileObj.upgradeMass);
+
+          // Aero
+          BTN_aero = UI_ShopEl.querySelector("#BTN_aero");
+          BTN_aero.addEventListener("mouseenter", function (event) {
+            BTN_aero.setAttribute("material", "color", "#ADFF2F");
+          });
+          BTN_aero.addEventListener("mouseleave", function (event) {
+            BTN_aero.setAttribute("material", "color", "green");
+          });
+          BTN_aero.addEventListener("click", projectileObj.upgradeAero);
+
+          // Bounces
+          BTN_bounces = UI_ShopEl.querySelector("#BTN_bounces");
+          BTN_bounces.addEventListener("mouseenter", function (event) {
+            BTN_bounces.setAttribute("material", "color", "#ADFF2F");
+          });
+          BTN_bounces.addEventListener("mouseleave", function (event) {
+            BTN_bounces.setAttribute("material", "color", "green");
+          });
+          BTN_bounces.addEventListener("click", projectileObj.upgradeBounce);
+
+          // Bounceness
+          BTN_bounceness = UI_ShopEl.querySelector("#BTN_bounceness");
+          BTN_bounceness.addEventListener("mouseenter", function (event) {
+            BTN_bounceness.setAttribute("material", "color", "#ADFF2F");
+          });
+          BTN_bounceness.addEventListener("mouseleave", function (event) {
+            BTN_bounceness.setAttribute("material", "color", "green");
+          });
+          BTN_bounceness.addEventListener(
+            "click",
+            projectileObj.upgradeBounceness
+          );
+
+          // Power
+          BTN_power = UI_ShopEl.querySelector("#BTN_power");
+          BTN_power.addEventListener("mouseenter", function (event) {
+            BTN_power.setAttribute("material", "color", "#ADFF2F");
+          });
+          BTN_power.addEventListener("mouseleave", function (event) {
+            BTN_power.setAttribute("material", "color", "green");
+          });
+          BTN_power.addEventListener("click", cannonObj.upgradeCapacity);
+
+          // Efficiency
+          BTN_efficiency = UI_ShopEl.querySelector("#BTN_efficiency");
+          BTN_efficiency.addEventListener("mouseenter", function (event) {
+            BTN_efficiency.setAttribute("material", "color", "#ADFF2F");
+          });
+          BTN_efficiency.addEventListener("mouseleave", function (event) {
+            BTN_efficiency.setAttribute("material", "color", "green");
+          });
+          BTN_efficiency.addEventListener("click", cannonObj.upgradeEfficiency);
+
+          // American
+          BTN_american = UI_ShopEl.querySelector("#BTN_american");
+          BTN_american.addEventListener("mouseenter", function (event) {
+            BTN_american.setAttribute("material", "color", "#ADFF2F");
+          });
+          BTN_american.addEventListener("mouseleave", function (event) {
+            BTN_american.setAttribute("material", "color", "green");
+          });
+          BTN_american.addEventListener("click", cannonObj.upgradeAmerican);
+          /*
+          UI_MainEl.setAttribute("animation", {
+              property: "position",
+              to: "0 0 -1",
+              dur: 1500,
+              delay: 500,
+              easing: "easeOutSine",
+              startEvents: "mainUIAni"
+            });
+            */
+        },
+        
+        tick: function () {
+          // UI only shows up when landed, so.
+          if (landed) {
+            UI_MainEl.emit("playUIMain");
+
+            // Set all UI text to the correct values upon initilization
+            UI_MainEl.querySelector("#banktext").setAttribute(
+              "text",
+              "value",
+              "Cold Hard Cheeseburgers: " + bank.toFixed(1)
+            );
+
+            UI_ShopEl.querySelector("#TXT_mass").setAttribute(
+              "text",
+              "value",
+              "Mass: " +
+                projectileObj.mass.toFixed(1) +
+                "                             Upgrade for " +
+                projectileObj.massCost.toFixed(1) +
+                "CHC"
+            );
+            UI_ShopEl.querySelector("#TXT_aero").setAttribute(
+              "text",
+              "value",
+              "Aerodynamicacy: " +
+                projectileObj.aero.toFixed(1) +
+                "     Upgrade for " +
+                projectileObj.aeroCost.toFixed(1) +
+                "CHC"
+            );
+            UI_ShopEl.querySelector("#TXT_bounces").setAttribute(
+              "text",
+              "value",
+              "Bounces: " +
+                projectileObj.bounce.toFixed(1) +
+                "                       Upgrade for " +
+                projectileObj.bounceCost.toFixed(1) +
+                "CHC"
+            );
+            UI_ShopEl.querySelector("#TXT_bounceness").setAttribute(
+              "text",
+              "value",
+              "Bounceness: " +
+                projectileObj.bounceness.toFixed(1) +
+                "               Upgrade for " +
+                projectileObj.bouncenessCost.toFixed(1) +
+                "CHC"
+            );
+
+            UI_ShopEl.querySelector("#TXT_power").setAttribute(
+              "text",
+              "value",
+              "Power: " +
+                cannonObj.capacity.toFixed(1) +
+                "                           Upgrade for " +
+                cannonObj.capacityCost.toFixed(1) +
+                "CHC"
+            );
+            UI_ShopEl.querySelector("#TXT_efficiency").setAttribute(
+              "text",
+              "value",
+              "Efficiency: " +
+                cannonObj.efficiency.toFixed(1) +
+                "                    Upgrade for " +
+                cannonObj.efficiencyCost.toFixed(1) +
+                "CHC"
+            );
+            UI_ShopEl.querySelector("#TXT_american").setAttribute(
+              "text",
+              "value",
+              "American: " +
+                cannonObj.american.toFixed(1) +
+                "                    Upgrade for " +
+                cannonObj.americanCost.toFixed(1) +
+                "CHC"
+            );
+            //console.log(UI_MainEl.getAttribute("animation").startEvents);
+            UI_ShopEl.querySelector("#TXT_ShopCHC").setAttribute(
+              "text",
+              "value",
+              "Cold Hard Cheeseburgers: " + bank.toFixed(1)
+            );
+          }
+        },
+      });
+
+      
+      //////////////////////////////////////
+      // COMPONENT 3: BETTERPOSANIMATION
+      //////////////////////////////////////
+      // AFRAME's animation component didn't work. Neither did anime.js.
+      // So I made my own.
+      AFRAME.registerComponent("betterposanimation", {
+        // "schema" is the parameters of the component.
+        schema: {
+          to: { type: "string", default: "0 0 0" },
+          speed: { type: "int", default: 250 },
+          delay: { type: "int", default: 0 },
+          ease: { type: "string", default: "easeOut" },
+          direction: { type: "string", default: "Y+" },
+          startEvent: { type: "string", default: "" },
+        },
+        init: function () {
+          this.animating = false;
+          this.delayInterval = 0;
+          this.onAnimation = this.onAnimation.bind(this);
+          //console.log(this.el.getAttribute("id"));
+        },
+
+        update: function () {
+          this.el.addEventListener(this.data.startEvent, this.onAnimation);
+          //console.log(this.animating);
+          //console.log("hi");
+        },
+
+        tick: function (time, deltaTime) {
+          if (this.animating) {
+            if (this.delayInterval >= this.data.delay) {
+              //console.log(this.el.getAttribute("id"));
+              let pos = this.el.getAttribute("position");
+              let endPos = this.data.to.split(" ");
+
+              if (this.data.direction === "Y+" && pos.y < parseInt(endPos[1])) {
+                this.el.getAttribute("position").y +=
+                  this.data.speed * (deltaTime * 0.01) * 0.001;
+              } else if (
+                this.data.direction === "X-" &&
+                pos.x > parseInt(endPos[0])
+              ) {
+                this.el.getAttribute("position").x -=
+                  this.data.speed * (deltaTime * 0.01) * 0.001;
+              } else {
+                this.animating = false;
+              }
+
+              //console.log(pos.y - parseInt(endPos[1]));
+            } else {
+              this.delayInterval++;
+            }
+          } else {
+            this.delayInterval = 0;
+          }
+        },
+
+        onAnimation: function () {
+          if (landed) {
+            this.animating = true;
+          }
+        },
+
+        // Allow for multiple instances of this component (for multiple animations on 1 entity)
+        multiple: true,
+      });
+
+      // CODE FOR USER TO BE ABLE TO ROTATE CAMERA
+      /*
+      function look(e){
+        console.log(mouseX);
+        if (mouseX == 0){
+          mouseCenter = e.clientX;
+        }
+        mouseX = e.clientX;
+        cameraBevel.setAttribute("rotation", {x: 0, y: mouseX-mouseCenter, z: 0});
+      }
+      
+      AFRAME.registerComponent("cameracontrols", {
+        init: function (){
+          cameraBevel = document.querySelector("#cameraBevel");
+          document.addEventListener("mousemove", look);
+        }
+      });
+      */
+    </script>
+
+    <a-scene
+      id="scenic"
+      background="color: #000000"
+      vr-mode-ui="enabled: false"
+      userinterface
+    >
+      <a-entity id="cameraBevel" position="0 1.6 -3">
+        <a-entity
+          id="mainCam"
+          camera
+          position="0 0 3"
+          cursor="rayOrigin: mouse"
+        >
+          <a-entity
+            id="scoreText"
+            text="value: Distance: 0 Cheeseburgers; align: center; font: exo2bold"
+            position="0 .35 -.5"
+          ></a-entity>
+
+          <!-- USER INTERFACE -->
+          <a-entity
+            id="UI_Main"
+            position="0 -2 -1"
+            geometry="primitive: plane"
+            scale="1.3 1.5 1"
+            material="color: #2F4F4F"
+            betterposanimation__slideup="to: 0 0 -1; speed: 250; delay: 60; direction: Y+; startEvent: playUIMain"
+            betterposanimation__slideleft="to: -3 0 -1; speed: 250; direction: X-; startEvent: playEnterShop"
+          >
+            <!--betterposanimation="to: 0 0 -1; speed: 2; delay: 500; startEvent: playUIMain"-->
+            <!--animation="property: position; to: 0 0 -1; dur: 1500; delay: 500; easing:easeOutSine; startEvents: mainUIAni"-->
+
+            <a-entity
+              id="highscoreText"
+              position="0 .34 .1"
+              text="value: Greatest Distance: 0 Cheeseburgers; align:center; font:exo2bold; width: .8"
+            ></a-entity>
+
+            <a-entity
+              id="banktext"
+              position="0 -.03 .1"
+              text="value: Cold Hard Cheeseburgers: 0; align:center; font:exo2bold; width: 1.1"
+            ></a-entity>
+
+            <a-entity
+              id="BTN_Relaunch"
+              position="0 .16 .1"
+              geometry="primitive: plane"
+              scale=".4 .13 1"
+              material="color: #32CD32"
+              text="value: Relaunch; align: center; font: exo2bold; width: 5"
+            ></a-entity>
+            <a-entity
+              id="BTN_Shop"
+              position="0 -.15 .1"
+              geometry="primitive:plane"
+              scale=".4 .13 1"
+              material="color: #CF3655"
+              text="value: Shop; align: center; font: exo2bold; width: 5"
+            ></a-entity>
+          </a-entity>
+          <a-entity
+            id="UI_Shop"
+            position="0 -2 -1"
+            geometry="primitive: plane"
+            scale="1.3 1.5 1"
+            material="color: #2F4F4F"
+            betterposanimation__slideerup="to: 0 0 -1; speed: 250; delay: 20 direction: Y+; startEvent: playUIShop"
+          >
+            <a-entity
+              id="TXT_ShopCHC"
+              position="0 .35 0"
+              text="value: Cold Hard Cheeseburgers: 0; align: center; font:exo2bold;"
+            ></a-entity>
+            <a-entity
+              id="TXT_mass"
+              position="-.1 .25 0"
+              text="value: Mass: N/A                             Upgrade for 0CHC; font: exo2bold; width: .7"
+            ></a-entity>
+            <a-entity
+              id="BTN_mass"
+              position=".3 .25 0"
+              geometry="primitive"
+              scale=".05 .04 .01"
+              material="color: green"
+            ></a-entity>
+            <a-entity
+              id="TXT_aero"
+              position="-.1 .18 0"
+              text="value: Aerodynamicacy: N/A     Upgrade for 0CHC; font: exo2bold; width: .7"
+            ></a-entity>
+            <a-entity
+              id="BTN_aero"
+              position=".3 .18 0"
+              geometry="primitive"
+              scale=".05 .04 .01"
+              material="color: green"
+            ></a-entity>
+            <a-entity
+              id="TXT_bounces"
+              position="-.1 .11 0"
+              text="value: Bounces: N/A                       Upgrade for 0CHC; font: exo2bold; width: .7"
+            ></a-entity>
+            <a-entity
+              id="BTN_bounces"
+              position=".3 .11 0"
+              geometry="primitive"
+              scale=".05 .04 .01"
+              material="color: green"
+            ></a-entity>
+            <a-entity
+              id="TXT_bounceness"
+              position="-.1 .04 0"
+              text="value: Bounceness: N/A               Upgrade for 0CHC; font: exo2bold; width: .7"
+            ></a-entity>
+            <a-entity
+              id="BTN_bounceness"
+              position=".3 .04 0"
+              geometry="primitive"
+              scale=".05 .04 .01"
+              material="color: green"
+            ></a-entity>
+            <a-entity
+              id="TXT_power"
+              position="-.1 -.08 0"
+              text="value: Power: N/A                           Upgrade for 0CHC; font: exo2bold; width: .7"
+            ></a-entity>
+            <a-entity
+              id="BTN_power"
+              position=".3 -.08 0"
+              geometry="primitive"
+              scale=".05 .04 .01"
+              material="color: green"
+            ></a-entity>
+            <a-entity
+              id="TXT_efficiency"
+              position="-.1 -.15 0"
+              text="value: Efficiency: N/A                    Upgrade for 0CHC; font: exo2bold; width: .7"
+            ></a-entity>
+            <a-entity
+              id="BTN_efficiency"
+              position=".3 -.15 0"
+              geometry="primitive"
+              scale=".05 .04 .01"
+              material="color: green"
+            ></a-entity>
+            <a-entity
+              id="TXT_american"
+              position="-.1 -.22 0"
+              text="value: American: N/A                    Upgrade for 0CHC; font: exo2bold; width: .7"
+            ></a-entity>
+            <a-entity
+              id="BTN_american"
+              position=".3 -.22 0"
+              geometry="primitive"
+              scale=".05 .04 .01"
+              material="color: green"
+            ></a-entity>
+            <a-entity
+              id="BTN_return"
+              position="0 -.37 0"
+              geometry="primitive"
+              scale=".3 .1 .01"
+              material="color: #000080"
+              ><a-entity
+                position="0 0 1"
+                text="value: Return; align: center; font: exo2bold; width: 6"
+              ></a-entity
+            ></a-entity>
+            <a-entity
+              id="disclaimer1"
+              position="0 -.45 0"
+              text="value: Sometimes you'll just lose cheeseburgers, everything got sales tax totally not a bug.; align:center; font:exo2bold; width: .3"
+              scale="2 1 1"
+            ></a-entity>
+          </a-entity>
+        </a-entity>
+      </a-entity>
+
+      <a-entity
+        id="cannon"
+        position="0 0 -3"
+        geometry="primitive:box"
+        scale="1 1.2 2.2"
+        material="color: #D2691E"
+        cannonaim
+      >
+        <a-entity
+          id="cannonWheelL"
+          position="-.6 -.4 0"
+          geometry="primitive: torus"
+          rotation="0 90 0"
+          scale=".25 .5 .4"
+          material="color: #8B4513"
+        ></a-entity>
+        <a-entity
+          id="cannonWheelR"
+          position=".6 -.4 0"
+          geometry="primitive: torus"
+          rotation="0 90 0"
+          scale=".25 .5 .4"
+          material="color: #8B4513"
+        ></a-entity>
+      </a-entity>
+    </a-scene>
+  </body>
+</html>
